@@ -19,7 +19,7 @@ public:
     virtual bool empty() = 0;
     virtual int size() = 0;
     virtual void clear() = 0;
-    virtual T& get(int index) = 0;
+    virtual T get(int index) = 0;
     virtual void set(int index, const T& element) = 0;
     virtual int indexOf(const T& item) = 0;
     virtual bool contains(const T& item) = 0;
@@ -59,7 +59,7 @@ public:
     virtual bool empty();
     virtual int size();
     virtual void clear();
-    virtual T& get(int index);
+    virtual T get(int index);
     virtual void set(int index, const T& element);
     virtual int indexOf(const T& item);
     
@@ -108,13 +108,17 @@ public:
     private:
         FragmentLinkedList<T> *pList;
         Node *pNode;
+        int index;
 
     public:
         Iterator(FragmentLinkedList<T> *pList = 0, bool begin = true){
             this->pList=pList;
-            if (begin==true) pNode=this->pList->fragmentPointers[0];
-            else{
+            if (begin==true){
+                pNode=this->pList->fragmentPointers[0];
+                this->index=0;
+            }else{
                 pNode=NULL;
+                this->index=this->pList->count;
             }
         };
         Iterator(FragmentLinkedList<T> *pList = 0, int fragmentIndex = 0, bool begin = true){
@@ -122,28 +126,31 @@ public:
             if (fragmentIndex==-1)
                 fragmentIndex=(this->pList->count-1)/this->pList->fragmentMaxSize;
             if (begin==true){
-                pNode=this->pList->fragmentPointers[fragmentIndex];
+                this->pNode=this->pList->fragmentPointers[fragmentIndex];
+                this->index=fragmentIndex*this->pList->fragmentMaxSize;
             }else{
-                Node *pTrain=this->pList->fragmentPointers[fragmentIndex];
-                int Index=0;
-                while (pTrain->next!=NULL && Index<this->pList->fragmentMaxSize-1){
-                    pTrain=pTrain->next;
-                    Index++;
+                int NumberFragment=(this->pList->count-1)/this->pList->fragmentMaxSize;
+                if (fragmentIndex<NumberFragment) {
+                    this->index=(fragmentIndex+1)*this->pList->fragmentMaxSize;
+                    this->pNode=this->pList->fragmentPointers[fragmentIndex+1];
+                }else{
+                    this->index=this->pList->count;
+                    this->pNode=NULL;
                 }
-                pNode=pTrain->next;
-                //reset pTrain=NULL
-                pTrain=NULL;
             }
         };
         Iterator &operator=(const Iterator &iterator){
-            this->pList=iterator->pList;
-            this->pNode=iterator.Node;
+            this->pList=iterator.pList;
+            this->pNode=iterator.pNode;
+            this->index=iterator.index;
+            return *this;
         };
         T &operator*(){
+            if (this->pNode==NULL) throw std::out_of_range("Segmentation␣fault!");
             return this->pNode->data;
         };
         bool operator!=(const Iterator &iterator){
-            return (this->pNode!=iterator.pNode);
+            return (this->pNode!=iterator.pNode || this->index!=iterator.index);
         };
         void remove(){
             //can be repaired
@@ -153,6 +160,7 @@ public:
             Node *pTrain=this->pList->fragmentPointers[0];
             while (pTrain!=pNode){pTrain=pTrain->next;index++;}
             pNode=pNode->prev;
+            this->index=this->index-1;
             this->pList->removeAt(index);
             //delete pTrain;// can be reviewed
             //reset pTrain=NULL;
@@ -162,16 +170,29 @@ public:
             this->pNode->data=element;
         };
         Iterator &operator++(){
-            if (pNode!=NULL) pNode=pNode->next;
+            if (pNode!=NULL){
+                this->index++;
+                pNode=pNode->next;
+            } 
+            else if (this->index==-1) {
+                this->index=0;
+                pNode=this->pList->fragmentPointers[0];
+            }
             return *this;
         };
         Iterator operator++(int){
             Iterator tmp=*this;
-            this->pNode=this->pNode->next;
+            if (pNode!=NULL){
+                this->pNode=this->pNode->next;
+                this->index++;
+            }
+            else if (this->index==-1) {
+                this->pNode=this->pList->fragmentPointers[0];
+                this->index=0;
+            }
             return tmp;
         };
     };
-    
 };
 template <class T>
 FragmentLinkedList<T>::~FragmentLinkedList(){
@@ -186,7 +207,6 @@ void FragmentLinkedList<T>::add(const T& element){
         //Find Node end of List
         Node *pTrain=this->fragmentPointers[0];
         while (pTrain->next!=NULL){pTrain=pTrain->next;}
-
         //insert Node
         pTrain->next=new Node(element,NULL,pTrain);
 
@@ -211,7 +231,6 @@ void FragmentLinkedList<T>::add(const T& element){
                     this->fragmentPointers[i/this->fragmentMaxSize]=head;
                 }
             }
-
             //reset head=NULL
             head=NULL;
         }
@@ -228,7 +247,6 @@ void FragmentLinkedList<T>::add(int index, const T& element){
         throw std::out_of_range("The index is out of range!");
         return;
     }
-
     // if Node is added on tail of FragmentLinkedList
     if (index==this->count){
         FragmentLinkedList<T>::add(element);
@@ -364,7 +382,7 @@ int FragmentLinkedList<T>::indexOf(const T& item){
     return RESULT;
 }
 template <class T>
-T& FragmentLinkedList<T>::get(int index){
+T FragmentLinkedList<T>::get(int index){
     //if index is out of bound
     if (index<0 || index>=this->count)
         throw std::out_of_range("The index is out of range!");
@@ -374,7 +392,7 @@ T& FragmentLinkedList<T>::get(int index){
         i++;
         FindNode=FindNode->next;
     }
-    T& RESULT= FindNode->data;
+    T RESULT= FindNode->data;
 
     FindNode=NULL;
     return RESULT;
@@ -463,11 +481,14 @@ string FragmentLinkedList<T>::toString()
 
 int main()
 {
-    FragmentLinkedList<int> pList=FragmentLinkedList<int>(2);
-    for (int i=0;i<10000;i++){
+    FragmentLinkedList<int> pList=FragmentLinkedList<int>(15);
+    for (int i=0;i<2;i++){
         pList.add(i);
     }
-    for (int i=0;i<10000;i++)
-        cout<<pList.get(100)<<" ";
+    auto it=FragmentLinkedList<int>::Iterator(&pList,true);
+    auto it1=FragmentLinkedList<int>::Iterator(&pList,false);
+    it.remove();
+    cout<<*++it;
+
 }
 //when i use delete method can be reviewd
